@@ -12,11 +12,11 @@ WORKDIR /app
 
 # Install system dependencies for PIL, fonts, and Playwright
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
+    libxrender1 \
     libfontconfig1 \
     fonts-dejavu-core \
     wget \
