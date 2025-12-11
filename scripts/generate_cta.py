@@ -129,28 +129,27 @@ class PathResolver:
         """Get path to Cinzel font file, with fallback to system fonts."""
         # Try Cinzel first
         cinzel_path = self.fonts_dir / f"Cinzel-{weight}.ttf"
+        print(f"  Looking for font at: {cinzel_path}")
         if cinzel_path.exists():
+            print(f"  Found Cinzel font")
             return cinzel_path
         
-        # Fallback to system serif fonts (similar aesthetic)
+        # Fallback to system serif fonts
         fallbacks = [
             Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
             Path("/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf"),
-            Path("/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf"),
         ]
         
         for font_path in fallbacks:
+            print(f"  Trying fallback: {font_path}")
             if font_path.exists():
+                print(f"  Using fallback font: {font_path}")
                 return font_path
         
-        # Last resort - any available font
-        import subprocess
-        result = subprocess.run(['fc-match', '-f', '%{file}', 'serif:bold'], 
-                                capture_output=True, text=True)
-        if result.returncode == 0 and result.stdout.strip():
-            return Path(result.stdout.strip())
-        
-        raise FileNotFoundError("No suitable font found")
+        # Last resort - use PIL's default font (will be basic but won't crash)
+        print("  WARNING: No fonts found, will use PIL default")
+        return None
     
     def get_output_path(self, button_type: str, text: str, color: Optional[str] = None) -> Path:
         """Generate output path for the CTA button."""
@@ -193,12 +192,15 @@ class CTATextRenderer:
     - line-height: normal (no custom spacing)
     """
     
-    def __init__(self, font_path: Path):
+    def __init__(self, font_path: Optional[Path]):
         self.font_path = font_path
-        if not font_path.exists():
-            print(f"  ⚠ Primary font not found: {font_path}")
-            print(f"    Using fallback font")
-        print(f"  ✓ Font: {font_path}")
+        if font_path is None:
+            print(f"  ⚠ No font path provided, will use PIL default")
+        elif not font_path.exists():
+            print(f"  ⚠ Font not found: {font_path}")
+            self.font_path = None
+        else:
+            print(f"  ✓ Font: {font_path}")
     
     def get_fixed_font_size(self) -> int:
         """
@@ -211,9 +213,6 @@ class CTATextRenderer:
                           font_size: int) -> Image.Image:
         """
         Render text as a transparent layer with exact centering.
-        
-        Uses PIL's anchor-based centering for clean, simple text rendering
-        matching the CSS specs (no custom letter spacing, normal line-height).
         """
         width, height = canvas_size
         
@@ -222,20 +221,27 @@ class CTATextRenderer:
         draw = ImageDraw.Draw(layer)
         
         # Load font at specified size
-        font = ImageFont.truetype(str(self.font_path), font_size)
+        if self.font_path and self.font_path.exists():
+            font = ImageFont.truetype(str(self.font_path), font_size)
+        else:
+            # Use PIL's default font (basic but won't crash)
+            try:
+                font = ImageFont.load_default(size=font_size)
+            except TypeError:
+                # Older PIL versions don't support size parameter
+                font = ImageFont.load_default()
         
         # Calculate center position
         center_x = width // 2
         center_y = height // 2
         
-        # Draw text centered using anchor (mm = middle-middle)
-        # This uses PIL's built-in centering which matches CSS text-align: center
+        # Draw text centered
         draw.text(
             (center_x, center_y), 
             text, 
             font=font, 
             fill=FIGMA.TEXT_COLOR,
-            anchor="mm"  # middle-middle anchor for perfect centering
+            anchor="mm"
         )
         
         return layer

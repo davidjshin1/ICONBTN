@@ -3,13 +3,15 @@ import argparse
 from PIL import Image
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
 
-# Setup
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+# Setup - get API key (don't fail on import)
 API_KEY = os.getenv("GOOGLE_API_KEY")
-if not API_KEY:
-    raise ValueError("GOOGLE_API_KEY not found in .env file")
 
 MODEL_ID = "gemini-3-pro-image-preview"
 
@@ -104,6 +106,9 @@ def generate_boon(boon: str, subicon: str, output_name: str = None):
     print(f"--- Generating Composite Boon ---")
     print(f"Main Boon: {boon}")
     print(f"Sub-Icon: {subicon}")
+    
+    if not API_KEY:
+        raise ValueError("GOOGLE_API_KEY not set in environment")
     
     # Resolve filenames
     boon_file = get_boon_filename(boon)
