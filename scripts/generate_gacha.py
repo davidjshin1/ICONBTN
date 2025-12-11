@@ -517,7 +517,10 @@ class PlaywrightRenderer:
         from playwright.sync_api import sync_playwright
         
         with sync_playwright() as p:
-            browser = p.chromium.launch()
+            # Launch with no-sandbox for Docker compatibility
+            browser = p.chromium.launch(
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            )
             page = browser.new_page(
                 viewport={"width": width, "height": height},
                 device_scale_factor=scale
