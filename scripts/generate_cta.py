@@ -220,16 +220,40 @@ class CTATextRenderer:
         layer = Image.new('RGBA', canvas_size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(layer)
         
-        # Load font at specified size
+        # Try to load font, with multiple fallbacks
+        font = None
+        
+        # Try custom font first
         if self.font_path and self.font_path.exists():
-            font = ImageFont.truetype(str(self.font_path), font_size)
-        else:
-            # Use PIL's default font (basic but won't crash)
+            try:
+                font = ImageFont.truetype(str(self.font_path), font_size)
+                print(f"  Loaded custom font: {self.font_path}")
+            except Exception as e:
+                print(f"  Failed to load custom font: {e}")
+        
+        # Fallback to system fonts
+        if font is None:
+            system_fonts = [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            ]
+            for sf in system_fonts:
+                if os.path.exists(sf):
+                    try:
+                        font = ImageFont.truetype(sf, font_size)
+                        print(f"  Using system font: {sf}")
+                        break
+                    except Exception:
+                        continue
+        
+        # Last resort - PIL default
+        if font is None:
             try:
                 font = ImageFont.load_default(size=font_size)
             except TypeError:
-                # Older PIL versions don't support size parameter
                 font = ImageFont.load_default()
+            print("  Using PIL default font")
         
         # Calculate center position
         center_x = width // 2
