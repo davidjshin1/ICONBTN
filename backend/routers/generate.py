@@ -6,6 +6,7 @@ import os
 import sys
 import uuid
 import asyncio
+import traceback
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -37,11 +38,15 @@ async def generate_asset(request: GenerateRequest):
     Parses the message to determine asset type and parameters,
     then routes to the appropriate generation service.
     """
+    print(f"[API] Received request: {request.message}")
+    
     parser = IntentParser()
     intent = parser.parse(request.message)
+    print(f"[API] Parsed intent: {intent.asset_type} with params {intent.params}")
     
     try:
         result = await run_generation(intent)
+        print(f"[API] Generation successful: {result}")
         return GenerateResponse(
             status="success",
             asset_type=intent.asset_type,
@@ -50,6 +55,8 @@ async def generate_asset(request: GenerateRequest):
             details=result.get("details")
         )
     except Exception as e:
+        print(f"[API] Generation error: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 async def run_generation(intent: ParsedIntent) -> dict:
