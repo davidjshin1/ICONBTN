@@ -7,6 +7,8 @@ export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [generatedAssets, setGeneratedAssets] = useState([]);
+  const [showGallery, setShowGallery] = useState(false);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -15,36 +17,54 @@ export default function Chat() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, isLoading]);
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
     
-    const userMessage = { role: 'user', content: input };
+    const userInput = input;
+    const userMessage = { role: 'user', content: userInput };
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
+    
+    console.log('Sending request:', userInput);
     
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: input })
+        body: JSON.stringify({ message: userInput })
       });
       
-      if (!res.ok) {
-        throw new Error(`Server error: ${res.status}`);
-      }
+      console.log('Response status:', res.status);
       
       const data = await res.json();
+      console.log('Response data:', data);
       
-      setMessages(prev => [...prev, {
+      if (!res.ok) {
+        throw new Error(data.detail || `Server error: ${res.status}`);
+      }
+      
+      const assistantMessage = {
         role: 'assistant',
         content: data.message,
         downloadUrl: data.download_url,
         assetType: data.asset_type,
-        details: data.details
-      }]);
+        details: data.details,
+        timestamp: new Date().toISOString()
+      };
+      
+      setMessages(prev => [...prev, assistantMessage]);
+      
+      if (data.download_url) {
+        setGeneratedAssets(prev => [...prev, {
+          url: data.download_url,
+          type: data.asset_type,
+          prompt: userInput,
+          timestamp: new Date().toISOString()
+        }]);
+      }
     } catch (err) {
       console.error('Generation error:', err);
       setMessages(prev => [...prev, {
@@ -65,6 +85,46 @@ export default function Chat() {
 
   return (
     <div className="bg-white overflow-hidden relative rounded-[32px] w-full max-w-[1327px] h-[900px] shadow-xl">
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-[#160211] border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-[#160211] font-manrope font-medium">Generating your asset...</p>
+            <p className="text-gray-400 text-sm">This may take 10-30 seconds</p>
+          </div>
+        </div>
+      )}
+
+      {/* Gallery Modal */}
+      {showGallery && (
+        <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-8">
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-xl font-manrope font-semibold">Generated Assets ({generatedAssets.length})</h2>
+              <button onClick={() => setShowGallery(false)} className="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              {generatedAssets.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">No assets generated yet</p>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {generatedAssets.map((asset, i) => (
+                    <div key={i} className="border rounded-lg p-3 hover:shadow-md transition-shadow">
+                      <div className="aspect-square bg-gray-100 rounded mb-2 flex items-center justify-center overflow-hidden">
+                        <img src={asset.url} alt={asset.type} className="max-w-full max-h-full object-contain" />
+                      </div>
+                      <p className="text-xs text-gray-500 truncate">{asset.prompt}</p>
+                      <a href={asset.url} download className="text-xs text-blue-600 hover:underline">Download</a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Background gradient blur */}
       <div className="absolute h-[464px] left-[calc(50%-10px)] top-[501px] -translate-x-1/2 w-[544px] pointer-events-none">
         <div className="absolute inset-[-96.98%_-68.01%_-107.76%_-91.91%]">
@@ -76,6 +136,17 @@ export default function Chat() {
         </div>
       </div>
       
+      {/* Gallery Button */}
+      <button 
+        onClick={() => setShowGallery(true)}
+        className="absolute top-6 right-6 px-4 py-2 bg-[#160211] text-white rounded-lg text-sm hover:bg-[#2a0420] transition-colors flex items-center gap-2"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        Gallery {generatedAssets.length > 0 && `(${generatedAssets.length})`}
+      </button>
+
       {/* Logo and Title */}
       <div className="absolute flex flex-col gap-4 items-center left-1/2 top-16 -translate-x-1/2 w-[409px]">
         <div className="h-[50px] relative w-[267px]">
