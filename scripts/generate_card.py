@@ -433,148 +433,115 @@ class CharacterFitter:
 
 class CardCompositor:
     """
-    Handles the compositing of all card layers using the ExactCardBuilder
-    from card_layer_system.py for Figma-based exact positioning.
+    Handles the compositing of all card layers using pure PIL.
+    No external dependencies required.
     """
     
     def __init__(self, path_resolver: PathResolver):
         self.resolver = path_resolver
-        # Import the exact layer system
-        from card_layer_system import (
-            ExactCardCompositor, ExactImageLoader, ExactMask,
-            LayerType, LayerSpec, CardLayerFormulas
-        )
-        self.ExactCardCompositor = ExactCardCompositor
-        self.ExactImageLoader = ExactImageLoader
-        self.ExactMask = ExactMask
-        self.LayerType = LayerType
-        self.LayerSpec = LayerSpec
-        self.CardLayerFormulas = CardLayerFormulas
     
     def _resize_icon(self, icon: Image.Image, icon_type: str) -> Image.Image:
-        """
-        Resize an icon based on the ICON_SIZING configuration.
-        
-        Args:
-            icon: The icon image to resize
-            icon_type: Either "calling" or "pip"
-            
-        Returns:
-            Resized icon image
-        """
+        """Resize an icon based on the ICON_SIZING configuration."""
         sizing = CardConfig.ICON_SIZING.get(icon_type)
         if not sizing:
             return icon
         
         canvas_w = CardConfig.CANVAS_WIDTH
-        canvas_h = CardConfig.CANVAS_HEIGHT
         orig_w, orig_h = icon.size
         
         if icon_type == "calling":
-            # Class sigil: 12-15% of card width
             target_w = int(canvas_w * sizing["width_percent"])
-            # Maintain aspect ratio
             scale = target_w / orig_w
             target_h = int(orig_h * scale)
-            
         elif icon_type == "pip":
-            # Rarity stars: 25% width for entire cluster
             target_w = int(canvas_w * sizing["width_percent"])
-            # Scale based on width, maintaining aspect ratio
             scale = target_w / orig_w
             target_w = int(orig_w * scale)
             target_h = int(orig_h * scale)
         else:
             return icon
         
-        # Resize with high-quality resampling
         resized = icon.resize((target_w, target_h), Image.Resampling.LANCZOS)
         
-        # Apply opacity if specified (for calling icons)
         if "opacity" in sizing and sizing["opacity"] < 1.0:
             r, g, b, a = resized.split()
             a = a.point(lambda x: int(x * sizing["opacity"]))
             resized = Image.merge('RGBA', (r, g, b, a))
         
         return resized
+    
+    def _center_paste(self, canvas: Image.Image, layer: Image.Image, 
+                      offset_x: int = 0, offset_y: int = 0) -> Image.Image:
+        """Paste a layer centered on the canvas with optional offset."""
+        canvas_w, canvas_h = canvas.size
+        layer_w, layer_h = layer.size
+        
+        x = (canvas_w - layer_w) // 2 + offset_x
+        y = (canvas_h - layer_h) // 2 + offset_y
+        
+        canvas.alpha_composite(layer, (x, y))
+        return canvas
         
     def composite(self, character_img: Image.Image, rarity: str, calling: str,
                   base_shape: Image.Image, character_fitter: CharacterFitter) -> Image.Image:
         """
-        Composite all layers into a final card image using Figma-based formulas.
+        Composite all layers into a final card image using PIL.
         
-        Layer order (z-order from card_layer_system.py):
-        1. BLACK_BORDER - Outer stroke (background fill for corners)
-        2. BASE_SHAPE   - Card shape mask (implicit in character masking)
-        3. CHARACTER    - Character artwork (masked to card shape)
-        4. BORDER       - Decorative border frame
-        5. PIP          - Rarity stars (bottom center)
-        6. CALLING      - Class icon (top center)
+        Layer order:
+        1. BLACK_BORDER - Outer stroke (background)
+        2. CHARACTER    - Character artwork (masked to card shape)
+        3. BORDER       - Decorative border frame
+        4. PIP          - Rarity stars (bottom center)
+        5. CALLING      - Class icon (top center)
         """
-        canvas_size = (CardConfig.CANVAS_WIDTH, CardConfig.CANVAS_HEIGHT)
+        canvas_w = CardConfig.CANVAS_WIDTH
+        canvas_h = CardConfig.CANVAS_HEIGHT
         
-        # Initialize the exact compositor
-        compositor = self.ExactCardCompositor(CardConfig.CANVAS_WIDTH, CardConfig.CANVAS_HEIGHT)
+        # Create transparent canvas
+        canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
         
-        # Prepare layers list
-        layers = []
-        
-        # Layer 1: Black border (background - outer stroke)
+        # Layer 1: Black border (background)
         black_border_path = self.resolver.get_rarity_asset(rarity, "black_border")
         if black_border_path and black_border_path.exists():
-            black_border = self.ExactImageLoader.load(black_border_path)
-            layers.append(self.LayerSpec(
-                layer_type=self.LayerType.BLACK_BORDER,
-                image=black_border,
-                formula=self.CardLayerFormulas.BLACK_BORDER,
-            ))
+            black_border = Image.open(black_border_path).convert('RGBA')
+            self._center_paste(canvas, black_border)
         
-        # Layer 2/3: Character (masked to base shape)
+        # Layer 2: Character (masked to base shape)
         fitted_character = character_fitter.fit_to_shape(
             character_img, base_shape, 
             mode=CardConfig.CHARACTER_FIT_MODE
         )
-        # Character is already masked by character_fitter, add directly
-        layers.append(self.LayerSpec(
-            layer_type=self.LayerType.CHARACTER,
-            image=fitted_character,
-            formula=self.CardLayerFormulas.CHARACTER,
-        ))
+        canvas.alpha_composite(fitted_character, (0, 0))
         
-        # Layer 4: Decorative border
+        # Layer 3: Decorative border
         border_path = self.resolver.get_rarity_asset(rarity, "border")
         if border_path and border_path.exists():
-            border = self.ExactImageLoader.load(border_path)
-            layers.append(self.LayerSpec(
-                layer_type=self.LayerType.BORDER,
-                image=border,
-                formula=self.CardLayerFormulas.BORDER,
-            ))
+            border = Image.open(border_path).convert('RGBA')
+            # Border offset from config: (19, 0)
+            border_offset = CardConfig.LAYER_CONFIG["border"]["offset"]
+            canvas.alpha_composite(border, border_offset)
         
-        # Layer 5: Pip (rarity stars)
+        # Layer 4: Pip (rarity stars) - bottom center
         pip_path = self.resolver.get_rarity_asset(rarity, "pip")
         if pip_path and pip_path.exists():
             pip = Image.open(pip_path).convert('RGBA')
             pip = self._resize_icon(pip, "pip")
-            layers.append(self.LayerSpec(
-                layer_type=self.LayerType.PIP,
-                image=pip,
-                formula=self.CardLayerFormulas.PIP,
-            ))
+            pip_w, pip_h = pip.size
+            pip_x = (canvas_w - pip_w) // 2
+            pip_y = canvas_h - pip_h - CardConfig.LAYER_CONFIG["pip"]["pip_bottom_margin"]
+            canvas.alpha_composite(pip, (pip_x, pip_y))
         
-        # Layer 6: Calling icon
+        # Layer 5: Calling icon - top center
         calling_path = self.resolver.find_calling_icon(calling)
         if calling_path and calling_path.exists():
             calling_icon = Image.open(calling_path).convert('RGBA')
             calling_icon = self._resize_icon(calling_icon, "calling")
-            layers.append(self.LayerSpec(
-                layer_type=self.LayerType.CALLING,
-                image=calling_icon,
-                formula=self.CardLayerFormulas.CALLING,
-            ))
+            calling_w, calling_h = calling_icon.size
+            calling_x = (canvas_w - calling_w) // 2
+            calling_y = CardConfig.LAYER_CONFIG["calling"]["calling_top_margin"]
+            canvas.alpha_composite(calling_icon, (calling_x, calling_y))
         
-        # Composite all layers using the exact system
-        return compositor.composite_card(layers)
+        return canvas
 
 
 # =============================================================================

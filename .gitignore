@@ -4,3 +4,12 @@ __pycache__/
 *.pyc
 .vscode/
 output/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Build artifacts
+static/
+*.log
