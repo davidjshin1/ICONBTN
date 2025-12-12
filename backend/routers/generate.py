@@ -187,18 +187,27 @@ async def generate_gacha(params: dict) -> dict:
         lambda: generator.generate(pull_spec=pull)
     )
     
-    if result and result.get('png'):
-        # Return path relative to output dir
-        png_path = result['png']
-        # Get the subfolder name and filename
-        rel_path = png_path.relative_to(PROJECT_ROOT / "output")
-        return {
-            "message": f"Generated gacha screen",
-            "download_url": f"/downloads/{rel_path}",
-            "details": params
-        }
-    else:
-        raise Exception("Gacha generation failed")
+    if result:
+        if result.get('png'):
+            # Return PNG if available
+            png_path = result['png']
+            rel_path = png_path.relative_to(PROJECT_ROOT / "output")
+            return {
+                "message": "Generated gacha screen",
+                "download_url": f"/downloads/{rel_path}",
+                "details": params
+            }
+        elif result.get('html'):
+            # Fall back to HTML if PNG failed
+            html_path = result['html']
+            rel_path = html_path.relative_to(PROJECT_ROOT / "output")
+            return {
+                "message": "Generated gacha screen (HTML only - PNG rendering unavailable)",
+                "download_url": f"/downloads/{rel_path}",
+                "details": params
+            }
+    
+    raise Exception("Gacha generation failed")
 
 @router.get("/health")
 async def health():

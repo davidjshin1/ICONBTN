@@ -514,23 +514,34 @@ class DynamicHTMLGenerator:
 class PlaywrightRenderer:
     def render(self, html: str, output_path: Path, 
                width: int, height: int, scale: float = 1.0) -> Path:
-        from playwright.sync_api import sync_playwright
-        
-        with sync_playwright() as p:
-            # Launch with no-sandbox for Docker compatibility
-            browser = p.chromium.launch(
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-            )
-            page = browser.new_page(
-                viewport={"width": width, "height": height},
-                device_scale_factor=scale
-            )
-            page.set_content(html)
-            page.wait_for_load_state("networkidle")
-            page.screenshot(path=str(output_path), type="png")
-            browser.close()
-        
-        return output_path
+        try:
+            from playwright.sync_api import sync_playwright
+            
+            with sync_playwright() as p:
+                # Launch with container-friendly settings
+                browser = p.chromium.launch(
+                    args=[
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--single-process',
+                        '--no-zygote'
+                    ]
+                )
+                page = browser.new_page(
+                    viewport={"width": width, "height": height},
+                    device_scale_factor=scale
+                )
+                page.set_content(html, wait_until='domcontentloaded')
+                page.screenshot(path=str(output_path), type="png")
+                browser.close()
+            
+            return output_path
+        except Exception as e:
+            print(f"Playwright render failed: {e}")
+            print("Gacha PNG rendering unavailable - returning HTML only")
+            return None
 
 
 # =============================================================================
@@ -709,7 +720,7 @@ class UnifiedGachaGenerator:
         
         # 3. Render PNG
         print("\nStep 4: Rendering PNG with Playwright...")
-        self.renderer.render(
+        png_result = self.renderer.render(
             html=html,
             output_path=output_png,
             width=self.specs.canvas_width,
@@ -717,19 +728,21 @@ class UnifiedGachaGenerator:
             scale=scale
         )
         
-        actual_w = int(self.specs.canvas_width * scale)
-        actual_h = int(self.specs.canvas_height * scale)
-        
         print(f"\n{'='*60}")
         print(f"✓ GENERATION COMPLETE")
         print(f"{'='*60}")
-        print(f"  PNG:    {output_png} ({actual_w}x{actual_h}px)")
+        if png_result:
+            actual_w = int(self.specs.canvas_width * scale)
+            actual_h = int(self.specs.canvas_height * scale)
+            print(f"  PNG:    {output_png} ({actual_w}x{actual_h}px)")
+        else:
+            print(f"  PNG:    (rendering failed)")
         print(f"  HTML:   {output_html}")
         print(f"  Assets: {output_assets_dir}/ ({len(assets_copied)} files)")
         print(f"{'='*60}\n")
         
         return {
-            'png': output_png,
+            'png': output_png if png_result else None,
             'html': output_html,
             'assets_dir': output_assets_dir,
         }
