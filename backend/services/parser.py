@@ -218,31 +218,11 @@ class IntentParser:
     
     def _parse_gacha(self, message: str) -> ParsedIntent:
         """Parse gacha pull screen request."""
-        message_lower = message.lower()
-        
-        # Count primals and sorcery cards
-        primal_count = 1
-        sorcery_count = 9
-        
-        # Look for patterns like "2 primals" or "1 5star primal"
-        primal_match = re.search(r'(\d+)\s*(?:5\s*star\s*)?primal', message_lower)
-        if primal_match:
-            primal_count = int(primal_match.group(1))
-        
-        sorcery_match = re.search(r'(\d+)\s*(?:3\s*star\s*)?sorcery', message_lower)
-        if sorcery_match:
-            sorcery_count = int(sorcery_match.group(1))
-        
-        # Ensure total is 10
-        total = primal_count + sorcery_count
-        if total != 10:
-            sorcery_count = 10 - primal_count
-        
-        pull_spec = f"{primal_count} 5star primal, {sorcery_count} 3star sorcery"
-        
+        # Pass the full message to the gacha script's parser which handles all variations
+        # e.g. "1 5star primal, 1 4star primal, 8 3star sorcery"
         return ParsedIntent(
             asset_type="gacha",
-            params={"pull": pull_spec, "primal_count": primal_count, "sorcery_count": sorcery_count},
+            params={"pull": message},
             confidence=0.85,
             raw_message=message
         )
